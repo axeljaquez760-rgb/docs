@@ -1,36 +1,303 @@
-command-block-overrides:
-  default: "[<command to override>]"
-  description: >
-    Which Vanilla commands should be prioritized over those provided by Bukkit
-    or plugins. Useful for compatibility with adventure maps built for Vanilla
-    command blocks.
+src/main/java/me/sxmoose202/untitled3/
+    Untitled3.java
+    /Commands
+        EnergyCommand.java
+    /Listeners
+        PlayerListener.java
+        SparkListener.java
+    /Managers
+        EnergyManager.java
+        SparkManager.java
+        EnchantManager.java
+    /Crafting
+        CustomCrafting.java
+src/main/resources/
+    plugin.yml
+name: Untitled3
+version: 1.0
+main: me.sxmoose202.untitled3.Untitled3
+api-version: 1.21
+commands:
+  energy:
+    description: Shows your current energy
+    usage: /energy
+package me.sxmoose202.untitled3;
 
-    Use the literal ''*'' to always use the Vanilla version in command blocks.
+import me.sxmoose202.untitled3.Crafting.CustomCrafting;
+import me.sxmoose202.untitled3.Commands.EnergyCommand;
+import me.sxmoose202.untitled3.Listeners.PlayerListener;
+import me.sxmoose202.untitled3.Listeners.SparkListener;
+import me.sxmoose202.untitled3.Managers.EnergyManager;
+import me.sxmoose202.untitled3.Managers.SparkManager;
+import me.sxmoose202.untitled3.Managers.EnchantManager;
+import org.bukkit.plugin.java.JavaPlugin;
 
-    By default, no commands are overridden.
-ignore-vanilla-permissions:
-  default: "false"
-  description: Whether to use Vanilla permission levels when executing commands.
-aliases:
-  icanhasbukkit:
-    default: "[version $1-]"
-    description: >-
-      A built-in alias. Set aliases to an empty list ([]) to persistently remove.
-  <alias name>:
-    default: "[<commands to run>]"
-    description: >
-      A list of strings which are target commands. Alternatively, a string,
-      which is a single target command.
+public class Untitled3 extends JavaPlugin {
 
-      A target command is a command that is run, when the alias is run.
+    private static Untitled3 instance;
+    private EnergyManager energyManager;
+    private SparkManager sparkManager;
 
-      Replacements:
+    @Override
+    public void onEnable() {
+        instance = this;
 
-        * `$sender` is replaced with the command sender''s name (Added by Paper).
-        * `$<n>` is replaced by the n''th argument, 1-indexed.
-        * `$$<n>` is replaced by the n''th argument, 1-indexed, failing if the n''th argument is not present.
-        * `$<n>-` is replaced by the n''th argument and everything that follows, 1-indexed.
-        * `$$<n>-` is replaced by the n''th argument and everything that follows, 1-indexed, failing if the n''th argument is not present.
+        energyManager = new EnergyManager();
+        sparkManager = new SparkManager();
 
+        // Register listeners
+        getServer().getPluginManager().registerEvents(new PlayerListener(energyManager, sparkManager), this);
+        getServer().getPluginManager().registerEvents(new SparkListener(sparkManager, energyManager), this);
+        getServer().getPluginManager().registerEvents(new EnchantManager(), this);
 
-      Each alias registered cannot (easily) be overridden by a plugin.
+        // Register commands
+        getCommand("energy").setExecutor(new EnergyCommand(energyManager));
+
+        // Register recipes
+        new CustomCrafting().registerRecipes();
+
+        getLogger().info("Untitled3 enabled!");
+    }
+
+    @Override
+    public void onDisable() {
+        getLogger().info("Untitled3 disabled!");
+    }
+
+    public static Untitled3 getInstance() {
+        return instance;
+    }
+
+    public EnergyManager getEnergyManager() {
+        return energyManager;
+    }
+
+    public SparkManager getSparkManager() {
+        return sparkManager;
+    }
+}
+package me.sxmoose202.untitled3.Managers;
+
+import org.bukkit.event.Listener;
+import org.bukkit.event.enchantment.EnchantItemEvent;
+import org.bukkit.event.EventHandler;
+import org.bukkit.enchantments.Enchantment;
+
+public class EnchantManager implements Listener {
+
+    @EventHandler
+    public void onEnchant(EnchantItemEvent event) {
+        // Only allow Protection III
+        event.getEnchantsToAdd().keySet().removeIf(enchant -> !enchant.equals(Enchantment.PROTECTION_ENVIRONMENTAL));
+
+        // Remove forbidden enchants
+        event.getEnchantsToAdd().remove(Enchantment.FIRE_ASPECT);
+        event.getEnchantsToAdd().remove(Enchantment.DAMAGE_ALL); // Strength/Sharpness
+        event.getEnchantsToAdd().remove(Enchantment.THORNS);
+    }
+}
+package me.sxmoose202.untitled3.Managers;
+
+import org.bukkit.entity.Player;
+import java.util.HashMap;
+import java.util.Map;
+
+public class EnergyManager {
+
+    private Map<Player, Integer> energy = new HashMap<>();
+    private final int START_ENERGY = 3;
+    private final int MAX_ENERGY = 5;
+
+    public void initPlayer(Player player) {
+        energy.putIfAbsent(player, START_ENERGY);
+    }
+
+    public int getEnergy(Player player) {
+        return energy.getOrDefault(player, START_ENERGY);
+    }
+
+    public void addEnergy(Player player, int amount) {
+        int current = getEnergy(player) + amount;
+        if (current > MAX_ENERGY) current = MAX_ENERGY;
+        energy.put(player, current);
+    }
+
+    public void removeEnergy(Player player, int amount) {
+        int current = getEnergy(player);
+        if (current <= 1) return; // can't lose below 1
+        current -= amount;
+        if (current < 1) current = 1;
+        energy.put(player, current);
+    }
+}
+package me.sxmoose202.untitled3.Managers;
+
+import org.bukkit.entity.Player;
+import java.util.HashMap;
+import java.util.Map;
+
+public class SparkManager {
+
+    private Map<Player, String> sparks = new HashMap<>();
+
+    public void setSpark(Player player, String spark) {
+        sparks.put(player, spark);
+    }
+
+    public String getSpark(Player player) {
+        return sparks.getOrDefault(player, "None");
+    }
+
+    public void weakenSpark(Player player) {
+        // Placeholder for weakening spark after death
+    }
+}
+package me.sxmoose202.untitled3.Commands;
+
+import me.sxmoose202.untitled3.Managers.EnergyManager;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandExecutor;
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
+
+public class EnergyCommand implements CommandExecutor {
+
+    private EnergyManager manager;
+
+    public EnergyCommand(EnergyManager manager) {
+        this.manager = manager;
+    }
+
+    @Override
+    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (!(sender instanceof Player)) {
+            sender.sendMessage("Only players can use this command.");
+            return true;
+        }
+
+        Player player = (Player) sender;
+        player.sendMessage("§aYour energy: " + manager.getEnergy(player));
+        return true;
+    }
+}
+package me.sxmoose202.untitled3.Listeners;
+
+import me.sxmoose202.untitled3.Managers.EnergyManager;
+import me.sxmoose202.untitled3.Managers.SparkManager;
+import org.bukkit.entity.Player;
+import org.bukkit.event.Listener;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
+
+public class PlayerListener implements Listener {
+
+    private EnergyManager energyManager;
+    private SparkManager sparkManager;
+
+    public PlayerListener(EnergyManager energyManager, SparkManager sparkManager) {
+        this.energyManager = energyManager;
+        this.sparkManager = sparkManager;
+    }
+
+    @EventHandler
+    public void onJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        energyManager.initPlayer(player);
+    }
+
+    @EventHandler
+    public void onDeath(PlayerDeathEvent event) {
+        Player player = event.getEntity();
+        energyManager.removeEnergy(player, 1);
+        sparkManager.weakenSpark(player);
+    }
+}
+package me.sxmoose202.untitled3.Listeners;
+
+import me.sxmoose202.untitled3.Managers.EnergyManager;
+import me.sxmoose202.untitled3.Managers.SparkManager;
+import org.bukkit.entity.Player;
+import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.EventHandler;
+
+public class SparkListener implements Listener {
+
+    private SparkManager sparkManager;
+    private EnergyManager energyManager;
+    private java.util.Map<Player, Integer> crits = new java.util.HashMap<>();
+
+    public SparkListener(SparkManager sparkManager, EnergyManager energyManager) {
+        this.sparkManager = sparkManager;
+        this.energyManager = energyManager;
+    }
+
+    @EventHandler
+    public void onCrit(EntityDamageByEntityEvent event) {
+        if (!(event.getDamager() instanceof Player)) return;
+        Player player = (Player) event.getDamager();
+
+        // track crits
+        crits.put(player, crits.getOrDefault(player, 0) + 1);
+        if (crits.get(player) >= 5) {
+            triggerSpark(player, event.getEntity());
+            crits.put(player, 0);
+        }
+    }
+
+    private void triggerSpark(Player player, org.bukkit.entity.Entity target) {
+        String spark = sparkManager.getSpark(player);
+        switch (spark) {
+            case "Water":
+                target.setFireTicks(0); // example placeholder for drowning effect
+                player.sendMessage("§bWater Spark activated!");
+                break;
+            case "Flame":
+                target.setFireTicks(100);
+                player.sendMessage("§cFlame Spark activated!");
+                break;
+            case "Lightning":
+                player.getWorld().strikeLightning(target.getLocation());
+                player.sendMessage("§eLightning Spark activated!");
+                break;
+            case "Frost":
+                // placeholder freezing
+                player.sendMessage("§fFrost Spark activated!");
+                break;
+            case "Health":
+                if (player.getHealth() < player.getMaxHealth() / 2) {
+                    player.addPotionEffect(new org.bukkit.potion.PotionEffect(
+                            org.bukkit.potion.PotionEffectType.DAMAGE_RESISTANCE, 200, 4));
+                }
+                player.sendMessage("§aHealth Spark activated!");
+                break;
+            case "Wealth":
+                player.sendMessage("§6Wealth Spark activated!");
+                break;
+        }
+    }
+}
+package me.sxmoose202.untitled3.Crafting;
+
+import org.bukkit.Bukkit;
+import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.ShapedRecipe;
+import org.bukkit.plugin.java.JavaPlugin;
+
+public class CustomCrafting {
+
+    public void registerRecipes() {
+        JavaPlugin plugin = me.sxmoose202.untitled3.Untitled3.getInstance();
+
+        // Golden apple: 1 Gold + 1 Apple
+        ItemStack goldenApple = new ItemStack(Material.GOLDEN_APPLE, 1);
+        ShapedRecipe recipe = new ShapedRecipe(new NamespacedKey(plugin, "custom_golden_apple"), goldenApple);
+        recipe.shape(" G", " A");
+        recipe.setIngredient('G', Material.GOLD_INGOT);
+        recipe.setIngredient('A', Material.APPLE);
+        Bukkit.addRecipe(recipe);
+    }
+}
